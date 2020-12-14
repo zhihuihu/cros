@@ -1,59 +1,97 @@
 const net = require('net');
+const http = require('http');
+const clientConfig = require('./client.json');
 const delimiterDecoder = require('../delimiter/delimiterDecoder');
 
-let chinnalMap = new Map();
+let tcpClientMap = new Map();
 let delimiterDecoderIns = new delimiterDecoder(Buffer.from("$_"),100*1024*1024,function(completeData){
-  console.log('接收CROS服务端的数据: ')
-  let transData = JSON.parse(completeData.toString());
-  let chinnalId = transData.chinnalId;
-  if(chinnalMap.get(chinnalId)){
-    let forwardClient = chinnalMap.get(transData.chinnalId);
-    let b = Buffer.from(transData.trueData.data);
-    forwardClient.write(b)
-  }else{
-    // 连接服务器
-    const forwardClient = net.connect({host: "192.168.8.11",port: 58001}, () => {
-      console.log('连接内网真实服务器');
-      let b = Buffer.from(transData.trueData.data);
-      forwardClient.write(b)
-      chinnalMap.set(transData.chinnalId,forwardClient);
+  let receiveData = JSON.parse(completeData.toString());
+  // 接收到注册结果消息
+  if(receiveData.type === 2){
+    receiveData.data.forEach((result)=>{
+      console.log(result.msg);
     })
-    // 接收服务端的数据
-    forwardClient.on('data', (data) => {
-      console.log('接收内网真实服务端的数据: ');
-      let initData = {
-        type: 2,
-        chinnalId: chinnalId,
-        trueData: data
+  }else if(receiveData.type === 3){
+    // 接收到请求数据
+    if(receiveData.data.type === "tcp"){
+      let cacheTcpClient = tcpClientMap.get(receiveData.channelId);
+      if(null != cacheTcpClient){
+        cacheTcpClient.write(Buffer.from(receiveData.data.trueData))
+      }else{
+        // 连接服务器
+        const tcpClient = net.connect({host: receiveData.data.localIp,port: receiveData.data.localPort}, () => {
+          let b = Buffer.from(receiveData.data.trueData);
+          tcpClient.write(Buffer.from(receiveData.data.trueData))
+          tcpClientMap.set(receiveData.channelId,tcpClient);
+        })
+        // 接收服务端的数据
+        tcpClient.on('data', (data) => {
+          let sendData = {
+            type: 4,
+            channelId: receiveData.channelId,
+            data: {
+              type: "tcp",
+              trueData: data
+            }
+          }
+          client.write(Buffer.from(JSON.stringify(sendData)+"$_","utf-8"))
+        })
+        // 断开连接
+        tcpClient.on('end', () => {
+          tcpClientMap.forEach((v,k)=>{
+            if(v == tcpClient){
+              // 删除连接
+              tcpClientMap.delete(k);
+            }
+          })
+        })
       }
-      let buffer = Buffer.from(JSON.stringify(initData)+"$_","utf-8");
-      client.write(buffer)
-    })
-    // 断开连接
-    forwardClient.on('end', () => {
-      console.log('断开连接')
-      chinnalMap.forEach((v,k)=>{
-        if(v == forwardClient){
-          // 删除连接
-          chinnalMap.delete(k);
-        }
-      })
-    })
+    }else if(receiveData.data.type === "http"){
+      let options = {
+        host: receiveData.data.localIp,
+        port: receiveData.data.localPort,
+        method: receiveData.data.method,
+        path: receiveData.data.url,
+        headers: receiveData.data.headers
+      };
+      let callback = function(response){
+        let body = [];
+        response.on('data', function(data) {
+          body.push(...data);
+        });
+        response.on('end', function() {
+          let responseData = {
+            type: "http",
+            statusCode: response.statusCode,
+            headers: response.headers,
+            body: body
+          }
+          // 数据接收完成
+          let sendData = {
+            channelId: receiveData.channelId,
+            type: 4,
+            data: responseData
+          }
+          client.write(Buffer.from(JSON.stringify(sendData)+"$_","utf-8"))
+        });
+      }
+      // 向服务端发送请求
+      let req = http.request(options, callback);
+      if(receiveData.data.postData && receiveData.data.postData.length > 0){
+        req.write(Buffer.from(receiveData.data.postData))
+      }
+      req.end();
+    }
   }
 });
 // 连接服务器
 const client = net.connect({port: 8080}, () => {
-
-  console.log('CROS客户端连接服务器');
-  let initData = {
+  let sendData = {
     type: 1,
-    port: 8082,
-    localIp: "192.168.8.11",
-    localPort: 58001
+    token: clientConfig.token,
+    data: clientConfig.registers
   }
-  let buffer = Buffer.from(JSON.stringify(initData)+"$_","utf-8");
-  client.write(buffer)
-  //client.write(JSON.stringify(initData))
+  client.write(Buffer.from(JSON.stringify(sendData)+"$_","utf-8"))
 })
 // 接收服务端的数据
 client.on('data', (data) => {
@@ -61,6 +99,4 @@ client.on('data', (data) => {
 })
 // 断开连接
 client.on('end', () => {
-  console.log('断开连接')
-
 })

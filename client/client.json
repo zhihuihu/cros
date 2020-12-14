@@ -1,0 +1,19 @@
+{
+  "serverIp": "127.0.0.1",
+  "serverPort": 8080,
+  "token": "12345676788",
+  "registers": [
+    {
+      "type": "tcp",
+      "port": 8082,
+      "localIp": "192.168.8.11",
+      "localPort": 58001
+    },
+    {
+      "type": "http",
+      "subdomain": "cos",
+      "localIp": "192.168.8.11",
+      "localPort": 58001
+    }
+  ]
+}

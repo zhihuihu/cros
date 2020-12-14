@@ -1,47 +1,104 @@
 const net = require('net');
 const uuid = require('uuid');
+const http = require('http');
+const serverConfig = require('./server.json');
 const delimiterDecoder = require('../delimiter/delimiterDecoder');
 
-/** 客户端注册的服务 */
-let clientServerMap = new Map();
+/** 客户端与服务器链接的MAP */
+let clientConnectMap = new Map();
+let clientConnectTcpMap = new Map();
+let clientConnectSubdomainMap = new Map();
+/** 客户端注册的TCP穿透MAP */
+let clientTcpMap = new Map();
+/** 客户端注册的子域名穿透MAP */
+let clientSubdomainMap = new Map();
+let clientSubdomainConfigMap = new Map();
+/** http服务存储的map键值对 */
+let httpServerMap = new Map();
+
 // 创建TCP服务器
 const server = net.createServer((socket) => {
-
+  // 保存客户端的连接
+  let clientConnectChannelId = uuid.v1();
+  clientConnectMap.set(clientConnectChannelId,socket);
   let delimiterDecoderIns = new delimiterDecoder(Buffer.from("$_"),100*1024*1024,function(completeData){
-    console.log(completeData.toString())
-    let transData = JSON.parse(completeData.toString());
-    if(transData.type === 1){
-      // 创建TCP服务器
-      const clientServer = net.createServer((clientServer) => {
-        let chinnalId = uuid.v1();
-        console.log('暴露客户端连接')
-        // 监听客户端的数据
-        clientServer.on('data', (data) => {
-          console.log('暴露客户端接收数据')
-          let initData = {
-            chinnalId: chinnalId,
-            trueData: data
+    let receiveData = JSON.parse(completeData.toString());
+    // 如果type：1 则表示客户端注册请求
+    if(receiveData.type === 1){
+      if(receiveData.token !== serverConfig.token){
+        console.error("注册客户端token错误！");
+        socket.end();
+        return;
+      }
+      // 发送消息给客户端注册的状态
+      let sendData = {
+        type: 2,
+        data:[
+        ]
+      }
+      receiveData.data.forEach((register,index,arr) => {
+        try{
+          if(register.type === "tcp"){
+            const clientTcpServer = net.createServer((clientTcpSocket) => {
+              let clientTcpChannelId = uuid.v1();
+              // 监听客户端的数据
+              clientTcpSocket.on('data', (data) => {
+                let sendData = {
+                  channelId: clientTcpChannelId,
+                  type: 3,
+                  data:{
+                    type: "tcp",
+                    localIp: register.localIp,
+                    localPort: register.localPort,
+                    trueData: data
+                  }
+                }
+                socket.write(Buffer.from(JSON.stringify(sendData)+"$_","utf-8"))
+              });
+              // 监听客户端断开连接事件
+              clientTcpSocket.on('end', (data) => {
+                clientTcpMap.delete(clientTcpChannelId);
+              });
+              clientTcpSocket.on('error', (error) => {
+                clientTcpMap.delete(clientTcpChannelId);
+              });
+              clientTcpMap.set(clientTcpChannelId,clientTcpSocket);
+            })
+            // 启动服务
+            clientTcpServer.listen(register.port, () => {
+            });
+            clientTcpServer.on("error",function (error) {
+              console.error("客户端通道失败",error);
+            })
+            sendData.data.push({msg:"tcp port:" + register.port + " success"})
+          }else if(register.type === "http"){
+            sendData.data.push({msg:"http subdomain:" + register.subdomain + " success"});
+            clientSubdomainMap.set(register.subdomain,socket);
+            clientSubdomainConfigMap.set(register.subdomain,register);
           }
-          let buffer = Buffer.from(JSON.stringify(initData)+"$_","utf-8");
-          socket.write(buffer)
-        });
-        // 监听客户端断开连接事件
-        clientServer.on('end', (data) => {
-          console.log('客户端断开连接')
-        });
-        clientServerMap.set(chinnalId,clientServer);
+        }catch (e) {
+          console.log("================>"+e);
+          if(register.type === "tcp"){
+            sendData.data.push({msg:"tcp port:" + register.port + " fail"})
+          }else if(register.type === "http"){
+            sendData.data.push({msg:"http subdomain:" + register.subdomain + " fail"})
+          }
+        }
       })
-      // 启动服务
-      clientServer.listen(transData.port, () => {
-        console.log('服务创建')
-      });
-    }else{
-      let b = Buffer.from(transData.trueData.data);
-      let clientServer = clientServerMap.get(transData.chinnalId);
-      clientServer.write(b);
+      socket.write(Buffer.from(JSON.stringify(sendData)+"$_","utf-8"))
+    }else if(receiveData.type === 4){
+      if(receiveData.data.type === "tcp"){
+        let cacheClientTcp = clientTcpMap.get(receiveData.channelId);
+        if(null != cacheClientTcp){
+          cacheClientTcp.write(Buffer.from(receiveData.data.trueData));
+        }
+      }else if(receiveData.data.type === "http"){
+        let httpServer = httpServerMap.get(receiveData.channelId);
+        httpServer.res.writeHead(receiveData.data.statusCode, receiveData.data.headers);
+        httpServer.res.end(Buffer.from(receiveData.data.body));
+      }
     }
   });
-  console.log('注册-客户端连接')
   // 监听客户端的数据
   socket.on('data', (data) => {
     delimiterDecoderIns.read(data);
@@ -50,8 +107,56 @@ const server = net.createServer((socket) => {
   socket.on('end', (data) => {
     console.log('客户端断开连接')
   });
+  // 监听客户端断开连接事件
+  socket.on('error', (error) => {
+    console.log('客户端发生错误',error);
+    socket.end();
+  });
 })
 // 启动服务
-server.listen(8080, () => {
-  console.log('服务创建')
+server.listen(serverConfig.bindPort, () => {
+  console.log('服务创建成功 tcp port:'+serverConfig.bindPort)
+});
+server.on("error", function (error) {
+  console.error("服务启动失败",error)
 })
+
+http.createServer(function (req, res) {
+  let channelId = uuid.v1();
+
+  httpServerMap.set(channelId,{req:req,res:res});
+  // 定义了一个post变量，用于暂存请求体的信息
+  var post = [];
+  // 通过req的data事件监听函数，每当接受到请求体的数据，就累加到post变量中
+  //当有数据请求时触发
+  req.on('data', function(data){
+    post.push(...data);
+  });
+
+  req.on('end', function(data){
+    let subdomain = req.headers.host.substring(0,req.headers.host.indexOf(serverConfig.subdomainHost) - 1);
+    let cacheClientSubdomain = clientSubdomainMap.get(subdomain);
+    let clientSubdomainConfig = clientSubdomainConfigMap.get(subdomain);
+    if(null == cacheClientSubdomain){
+      res.writeHead(404);
+      res.end(Buffer.from("cros not find cos config！！"));
+      return;
+    }
+    let transData = {
+      type: "http",
+      localIp: clientSubdomainConfig.localIp,
+      localPort: clientSubdomainConfig.localPort,
+      headers: req.headers,
+      url: req.url,
+      method: req.method,
+      postData: post
+    }
+    let initData = {
+      channelId: channelId,
+      type: 3,
+      data: transData
+    }
+    cacheClientSubdomain.write(Buffer.from(JSON.stringify(initData)+"$_","utf-8"));
+  });
+}).listen(serverConfig.bindHttpPort);
+console.log('Server running at http://127.0.0.1:'+serverConfig.bindHttpPort+'/');

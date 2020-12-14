@@ -1,0 +1,6 @@
+{
+  "bindPort": 8080,
+  "bindHttpPort": 8081,
+  "token": "12345676788",
+  "subdomainHost": "huzhihui.com"
+}
