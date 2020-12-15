@@ -20,7 +20,6 @@ let delimiterDecoderIns = new delimiterDecoder(Buffer.from("$_"),100*1024*1024,f
       }else{
         // 连接服务器
         const tcpClient = net.connect({host: receiveData.data.localIp,port: receiveData.data.localPort}, () => {
-          let b = Buffer.from(receiveData.data.trueData);
           tcpClient.write(Buffer.from(receiveData.data.trueData))
           tcpClientMap.set(receiveData.channelId,tcpClient);
         })
@@ -44,6 +43,20 @@ let delimiterDecoderIns = new delimiterDecoder(Buffer.from("$_"),100*1024*1024,f
               tcpClientMap.delete(k);
             }
           })
+        })
+        tcpClient.on("error",(error)=>{
+          let responseData = {
+            type: "tcp",
+            code: "error",
+            body: error
+          }
+          // 数据接收完成
+          let sendData = {
+            channelId: receiveData.channelId,
+            type: 5,
+            data: responseData
+          }
+          client.write(Buffer.from(JSON.stringify(sendData)+"$_","utf-8"))
         })
       }
     }else if(receiveData.data.type === "http"){
@@ -77,6 +90,20 @@ let delimiterDecoderIns = new delimiterDecoder(Buffer.from("$_"),100*1024*1024,f
       }
       // 向服务端发送请求
       let req = http.request(options, callback);
+      req.on("error", (error)=>{
+        let responseData = {
+          type: "http",
+          code: "error",
+          body: error
+        }
+        // 数据接收完成
+        let sendData = {
+          channelId: receiveData.channelId,
+          type: 5,
+          data: responseData
+        }
+        client.write(Buffer.from(JSON.stringify(sendData)+"$_","utf-8"))
+      })
       if(receiveData.data.postData && receiveData.data.postData.length > 0){
         req.write(Buffer.from(receiveData.data.postData))
       }
@@ -85,7 +112,7 @@ let delimiterDecoderIns = new delimiterDecoder(Buffer.from("$_"),100*1024*1024,f
   }
 });
 // 连接服务器
-const client = net.connect({port: 8080}, () => {
+const client = net.connect({host: clientConfig.serverIp,port: clientConfig.serverPort}, () => {
   let sendData = {
     type: 1,
     token: clientConfig.token,
