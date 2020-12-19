@@ -2,9 +2,12 @@ const net = require('net');
 const http = require('http');
 const clientConfig = require('./client.json');
 const delimiterDecoder = require('../delimiter/delimiterDecoder');
+const lengthFieldDecoder = require('../lengthField/lengthFieldDecoder');
+const lengthFieldEncoder = require('../lengthField/lengthFieldEncoder');
 
 let tcpClientMap = new Map();
-let delimiterDecoderIns = new delimiterDecoder(Buffer.from("$_"),100*1024*1024,function(completeData){
+let lengthFieldEncoderIns = new lengthFieldEncoder(4,100*1024*1024);
+let lengthFieldDecoderIns = new lengthFieldDecoder(4,100*1024*1024,function(completeData){
   let receiveData = JSON.parse(completeData.toString());
   // 接收到注册结果消息
   if(receiveData.type === 2){
@@ -33,7 +36,7 @@ let delimiterDecoderIns = new delimiterDecoder(Buffer.from("$_"),100*1024*1024,f
               trueData: data
             }
           }
-          client.write(Buffer.from(JSON.stringify(sendData)+"$_","utf-8"))
+          client.write(lengthFieldEncoderIns.encode(Buffer.from(JSON.stringify(sendData),"utf-8")));
         })
         // 断开连接
         tcpClient.on('end', () => {
@@ -56,7 +59,7 @@ let delimiterDecoderIns = new delimiterDecoder(Buffer.from("$_"),100*1024*1024,f
             type: 5,
             data: responseData
           }
-          client.write(Buffer.from(JSON.stringify(sendData)+"$_","utf-8"))
+          client.write(lengthFieldEncoderIns.encode(Buffer.from(JSON.stringify(sendData),"utf-8")));
         })
       }
     }else if(receiveData.data.type === "http"){
@@ -85,7 +88,7 @@ let delimiterDecoderIns = new delimiterDecoder(Buffer.from("$_"),100*1024*1024,f
             type: 4,
             data: responseData
           }
-          client.write(Buffer.from(JSON.stringify(sendData)+"$_","utf-8"))
+          client.write(lengthFieldEncoderIns.encode(Buffer.from(JSON.stringify(sendData),"utf-8")));
         });
       }
       // 向服务端发送请求
@@ -102,7 +105,7 @@ let delimiterDecoderIns = new delimiterDecoder(Buffer.from("$_"),100*1024*1024,f
           type: 5,
           data: responseData
         }
-        client.write(Buffer.from(JSON.stringify(sendData)+"$_","utf-8"))
+        client.write(lengthFieldEncoderIns.encode(Buffer.from(JSON.stringify(sendData),"utf-8")));
       })
       if(receiveData.data.postData && receiveData.data.postData.length > 0){
         req.write(Buffer.from(receiveData.data.postData))
@@ -110,7 +113,7 @@ let delimiterDecoderIns = new delimiterDecoder(Buffer.from("$_"),100*1024*1024,f
       req.end();
     }
   }
-});
+})
 // 连接服务器
 const client = net.connect({host: clientConfig.serverIp,port: clientConfig.serverPort}, () => {
   let sendData = {
@@ -118,11 +121,11 @@ const client = net.connect({host: clientConfig.serverIp,port: clientConfig.serve
     token: clientConfig.token,
     data: clientConfig.registers
   }
-  client.write(Buffer.from(JSON.stringify(sendData)+"$_","utf-8"))
+  client.write(lengthFieldEncoderIns.encode(Buffer.from(JSON.stringify(sendData),"utf-8")));
 })
 // 接收服务端的数据
 client.on('data', (data) => {
-  delimiterDecoderIns.read(data);
+  lengthFieldDecoderIns.read(data);
 })
 // 断开连接
 client.on('end', () => {

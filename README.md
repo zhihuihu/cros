@@ -6,6 +6,7 @@
 
 ### server.config配置
 ```
+* 服务端启动 node ./server/server.js*
 {
   // 服务开启的tcp端口供服务端和客户端通信
   "bindPort": 8080,
@@ -21,6 +22,7 @@
 ### client.json配置
 
 ```
+* 客户端启动 node ./client/client.js *
 {
   // 服务端的IP地址
   "serverIp": "127.0.0.1",

@@ -3,6 +3,8 @@ const uuid = require('uuid');
 const http = require('http');
 const serverConfig = require('./server.json');
 const delimiterDecoder = require('../delimiter/delimiterDecoder');
+const lengthFieldDecoder = require('../lengthField/lengthFieldDecoder');
+const lengthFieldEncoder = require('../lengthField/lengthFieldEncoder');
 
 /** 客户端与服务器链接的MAP */
 let clientConnectSocketMap = new Map();
@@ -17,12 +19,13 @@ let clientSubdomainConfigMap = new Map();
 /** http服务存储的map键值对 */
 let httpServerMap = new Map();
 
+let lengthFieldEncoderIns = new lengthFieldEncoder(4,100*1024*1024);
 // 创建TCP服务器
 const server = net.createServer((socket) => {
   // 保存客户端的连接
   let clientConnectChannelId = uuid.v1();
   clientConnectSocketMap.set(clientConnectChannelId,socket);
-  let delimiterDecoderIns = new delimiterDecoder(Buffer.from("$_"),100*1024*1024,function(completeData){
+  let lengthFieldDecoderIns = new lengthFieldDecoder(4,100*1024*1024,function (completeData) {
     let receiveData = JSON.parse(completeData.toString());
     // 如果type：1 则表示客户端注册请求
     if(receiveData.type === 1){
@@ -54,7 +57,7 @@ const server = net.createServer((socket) => {
                   trueData: data
                 }
               }
-              socket.write(Buffer.from(JSON.stringify(sendData)+"$_","utf-8"))
+              socket.write(lengthFieldEncoderIns.encode(Buffer.from(JSON.stringify(sendData),"utf-8")));
             });
             // 监听客户端断开连接事件
             clientTcpSocket.on('end', (data) => {
@@ -70,12 +73,12 @@ const server = net.createServer((socket) => {
           clientTcpServer.listen(register.port, () => {
             clientConnectTcpMap.set(clientTcpServer,clientConnectChannelId);
             sendData.data.push({msg:"tcp port:" + register.port + " success"});
-            socket.write(Buffer.from(JSON.stringify(sendData)+"$_","utf-8"))
+            socket.write(lengthFieldEncoderIns.encode(Buffer.from(JSON.stringify(sendData),"utf-8")));
           });
           clientTcpServer.on("error",function (error) {
             console.error("客户端通道失败",error);
             sendData.data.push({msg:"tcp port:" + register.port + " fail"});
-            socket.write(Buffer.from(JSON.stringify(sendData)+"$_","utf-8"))
+            socket.write(lengthFieldEncoderIns.encode(Buffer.from(JSON.stringify(sendData),"utf-8")))
           })
         }else if(register.type === "http"){
           if(null == clientConnectSubdomainMap.get(register.subdomain)){
@@ -85,7 +88,7 @@ const server = net.createServer((socket) => {
           }else{
             sendData.data.push({msg:"http subdomain:" + register.subdomain + " fail"});
           }
-          socket.write(Buffer.from(JSON.stringify(sendData)+"$_","utf-8"))
+          socket.write(lengthFieldEncoderIns.encode(Buffer.from(JSON.stringify(sendData),"utf-8")))
         }
       })
     }else if(receiveData.type === 4){
@@ -123,7 +126,7 @@ const server = net.createServer((socket) => {
   });
   // 监听客户端的数据
   socket.on('data', (data) => {
-    delimiterDecoderIns.read(data);
+    lengthFieldDecoderIns.read(data);
   });
   // 监听客户端断开连接事件
   socket.on('end', (data) => {
@@ -204,7 +207,7 @@ http.createServer(function (req, res) {
       type: 3,
       data: transData
     }
-    cacheClientConnect.write(Buffer.from(JSON.stringify(initData)+"$_","utf-8"));
+    cacheClientConnect.write(lengthFieldEncoderIns.encode(Buffer.from(JSON.stringify(initData),"utf-8")));
   });
 }).listen(serverConfig.bindHttpPort);
 console.log('Server running at http://127.0.0.1:'+serverConfig.bindHttpPort+'/');
