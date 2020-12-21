@@ -27,8 +27,14 @@ const server = net.createServer((socket) => {
   clientConnectSocketMap.set(clientConnectChannelId,socket);
   let lengthFieldDecoderIns = new lengthFieldDecoder(4,100*1024*1024,function (completeData) {
     let receiveData = JSON.parse(completeData.toString());
-    // 如果type：1 则表示客户端注册请求
-    if(receiveData.type === 1){
+    // 如果type：0 代表心跳
+    if(receiveData.type === 0){
+      let sendData = {
+        type: 0,
+      }
+      socket.write(lengthFieldEncoderIns.encode(Buffer.from(JSON.stringify(sendData),"utf-8")));
+    }else if(receiveData.type === 1){
+      // 如果type：1 则表示客户端注册请求
       if(receiveData.token !== serverConfig.token){
         console.error("注册客户端token错误！");
         socket.end();
@@ -126,7 +132,11 @@ const server = net.createServer((socket) => {
   });
   // 监听客户端的数据
   socket.on('data', (data) => {
-    lengthFieldDecoderIns.read(data);
+    try{
+      lengthFieldDecoderIns.read(data);
+    }catch (error) {
+      console.error("通道数据异常",error);
+    }
   });
   // 监听客户端断开连接事件
   socket.on('end', (data) => {

@@ -5,12 +5,31 @@ const delimiterDecoder = require('../delimiter/delimiterDecoder');
 const lengthFieldDecoder = require('../lengthField/lengthFieldDecoder');
 const lengthFieldEncoder = require('../lengthField/lengthFieldEncoder');
 
+// 心跳助手
+let idleStateHandler;
+// 重连助手
+let reconnectHandler;
+// 连接状态
+let connectFlag;
 let tcpClientMap = new Map();
 let lengthFieldEncoderIns = new lengthFieldEncoder(4,100*1024*1024);
 let lengthFieldDecoderIns = new lengthFieldDecoder(4,100*1024*1024,function(completeData){
   let receiveData = JSON.parse(completeData.toString());
-  // 接收到注册结果消息
-  if(receiveData.type === 2){
+  // 如果是心跳回复消息则不处理
+  if(receiveData.type === 0){
+
+  }else if(receiveData.type === 2){
+    // 接收到注册结果消息
+    connectFlag = true;
+    clearInterval(reconnectHandler);
+    if(!idleStateHandler){
+      idleStateHandler = setInterval(function () {
+        let sendData = {
+          type: 0,
+        }
+        client.write(lengthFieldEncoderIns.encode(Buffer.from(JSON.stringify(sendData),"utf-8")));
+      },30000);
+    }
     receiveData.data.forEach((result)=>{
       console.log(result.msg);
     })
@@ -115,18 +134,46 @@ let lengthFieldDecoderIns = new lengthFieldDecoder(4,100*1024*1024,function(comp
   }
 })
 // 连接服务器
-const client = net.connect({host: clientConfig.serverIp,port: clientConfig.serverPort}, () => {
-  let sendData = {
-    type: 1,
-    token: clientConfig.token,
-    data: clientConfig.registers
-  }
-  client.write(lengthFieldEncoderIns.encode(Buffer.from(JSON.stringify(sendData),"utf-8")));
-})
-// 接收服务端的数据
-client.on('data', (data) => {
-  lengthFieldDecoderIns.read(data);
-})
+let client = connect();
+
+/**
+ * 连接服务器
+ * @returns {Socket}
+ */
+function connect(){
+  let connectClient = net.connect({host: clientConfig.serverIp,port: clientConfig.serverPort}, () => {
+    let sendData = {
+      type: 1,
+      token: clientConfig.token,
+      data: clientConfig.registers
+    }
+    connectClient.write(lengthFieldEncoderIns.encode(Buffer.from(JSON.stringify(sendData),"utf-8")));
+  });
+  // 接收服务端的数据
+  connectClient.on('data', (data) => {
+    try{
+      lengthFieldDecoderIns.read(data);
+    }catch (error) {
+      console.error("通道数据异常",error);
+    }
+  })
 // 断开连接
-client.on('end', () => {
-})
+  connectClient.on('end', () => {
+
+  })
+  connectClient.on("error", (error)=>{
+    console.error("异常",error);
+    // 断线重连
+    connectClient.end();
+    clearInterval(reconnectHandler);
+    clearInterval(idleStateHandler);
+    idleStateHandler = null;
+    connectFlag = false;
+    reconnectHandler = setInterval(function () {
+      client = connect();
+    },10000);
+  })
+  return connectClient;
+}
+
+
