@@ -193,31 +193,35 @@ http.createServer(function (req, res) {
   });
 
   req.on('end', function(){
-    let subdomain = req.headers.host.substring(0,req.headers.host.indexOf(serverConfig.subdomainHost) - 1);
-    let clientConnectChannelId = clientConnectSubdomainMap.get(subdomain);
-    let clientSubdomainConfig = clientSubdomainConfigMap.get(subdomain);
-    if(null == clientConnectChannelId || null == clientConnectSocketMap.get(clientConnectChannelId)){
-      res.writeHead(404);
-      res.end(Buffer.from("cros not find "+req.headers.host+" config!","utf-8"));
-      httpServerMap.delete(channelId);
-      return;
+    try{
+      let subdomain = req.headers.host.substring(0,req.headers.host.indexOf(serverConfig.subdomainHost) - 1);
+      let clientConnectChannelId = clientConnectSubdomainMap.get(subdomain);
+      let clientSubdomainConfig = clientSubdomainConfigMap.get(subdomain);
+      if(null == clientConnectChannelId || null == clientConnectSocketMap.get(clientConnectChannelId)){
+        res.writeHead(404);
+        res.end(Buffer.from("cros not find "+req.headers.host+" config!","utf-8"));
+        httpServerMap.delete(channelId);
+        return;
+      }
+      let cacheClientConnect = clientConnectSocketMap.get(clientConnectChannelId);
+      let transData = {
+        type: "http",
+        localIp: clientSubdomainConfig.localIp,
+        localPort: clientSubdomainConfig.localPort,
+        headers: req.headers,
+        url: req.url,
+        method: req.method,
+        postData: post
+      }
+      let initData = {
+        channelId: channelId,
+        type: 3,
+        data: transData
+      }
+      cacheClientConnect.write(lengthFieldEncoderIns.encode(Buffer.from(JSON.stringify(initData),"utf-8")));
+    }catch (error) {
+      console.log("http数据异常",error);
     }
-    let cacheClientConnect = clientConnectSocketMap.get(clientConnectChannelId);
-    let transData = {
-      type: "http",
-      localIp: clientSubdomainConfig.localIp,
-      localPort: clientSubdomainConfig.localPort,
-      headers: req.headers,
-      url: req.url,
-      method: req.method,
-      postData: post
-    }
-    let initData = {
-      channelId: channelId,
-      type: 3,
-      data: transData
-    }
-    cacheClientConnect.write(lengthFieldEncoderIns.encode(Buffer.from(JSON.stringify(initData),"utf-8")));
   });
 }).listen(serverConfig.bindHttpPort);
 console.log('Server running at http://127.0.0.1:'+serverConfig.bindHttpPort+'/');
