@@ -16,10 +16,8 @@ class lengthFieldEncoder{
       throw new Error("数据超过编码最大长度");
     }
     let headerBytes = this.buildDataLengthBytes(data.length);
-    let fullBytes = [];
-    fullBytes.push(...headerBytes);
-    fullBytes.push(...data);
-    return Buffer.from(fullBytes);
+    let headerBuffer = Buffer.from(headerBytes);
+    return Buffer.concat([headerBuffer,data]);
   }
 
   /**

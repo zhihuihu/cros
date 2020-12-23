@@ -4,7 +4,7 @@ class delimiterDecoder{
   delimiter;
   /** 完整数据包处理 */
   completeDataExecute;
-  /** 传入的数据 */
+  /** 传入的数据 buffer */
   chunks = [];
   /** 记录buffer最大长度 字节数byte */
   maxSize = 0;
@@ -19,11 +19,14 @@ class delimiterDecoder{
    * @param data
    */
   read(data){
-    this.chunks.push(...data);
+    if(this.chunks.length === 0){
+      this.chunks = data;
+    }else{
+      this.chunks = Buffer.concat([this.chunks,data]);
+    }
 
     while (true){
-      let buf = Buffer.from(this.chunks);
-      let index = buf.indexOf(this.delimiter);
+      let index = this.chunks.indexOf(this.delimiter);
       if(index <= -1){
         if(this.chunks.length >= this.maxSize){
           console.debug("---> discard message")
@@ -35,7 +38,7 @@ class delimiterDecoder{
         this.chunks.splice(0,index + this.delimiter.length);
         continue;
       }
-      let completeData = buf.slice(0,index);
+      let completeData = this.chunks.slice(0,index);
       let removeLength = index + this.delimiter.length;
       this.chunks.splice(0,removeLength);
       this.completeDataExecute(completeData);
