@@ -174,7 +174,7 @@ const server = net.createServer((socket) => {
 
 // 启动服务
 server.listen(serverConfig.bindPort, () => {
-  console.log('服务创建成功 tcp port:'+serverConfig.bindPort)
+  console.log(new Date().format("yyyy-MM-dd hh:mm:ss") + '  服务创建成功 tcp port:'+serverConfig.bindPort)
 });
 server.on("error", function (error) {
   console.error("服务启动失败",error)
@@ -185,11 +185,15 @@ http.createServer(function (req, res) {
 
   httpServerMap.set(channelId,{req:req,res:res});
   // 定义了一个post变量，用于暂存请求体的信息
-  var post = [];
+  let post = [];
   // 通过req的data事件监听函数，每当接受到请求体的数据，就累加到post变量中
   //当有数据请求时触发
   req.on('data', function(data){
-    post.push(...data);
+    if(post.length === 0){
+      post = data;
+    }else{
+      post = Buffer.concat([this.post,data]);
+    }
   });
 
   req.on('end', function(){
@@ -224,4 +228,4 @@ http.createServer(function (req, res) {
     }
   });
 }).listen(serverConfig.bindHttpPort);
-console.log('Server running at http://127.0.0.1:'+serverConfig.bindHttpPort+'/');
+console.log(new Date().format("yyyy-MM-dd hh:mm:ss") + '  Server running at http://127.0.0.1:'+serverConfig.bindHttpPort+'/');

@@ -35,12 +35,12 @@ class delimiterDecoder{
         break;
       }else if(index > this.maxSize){
         console.debug("---> discard message")
-        this.chunks.splice(0,index + this.delimiter.length);
+        this.chunks = this.chunks.slice(index + this.delimiter.length);
         continue;
       }
       let completeData = this.chunks.slice(0,index);
       let removeLength = index + this.delimiter.length;
-      this.chunks.splice(0,removeLength);
+      this.chunks = this.chunks.slice(removeLength);
       this.completeDataExecute(completeData);
     }
   }

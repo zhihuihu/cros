@@ -20,7 +20,11 @@ class lengthFieldDecoder{
    * @param data
    */
   read(data){
-    this.chunks.push(...data);
+    if(this.chunks.length === 0){
+      this.chunks = data;
+    }else{
+      this.chunks = Buffer.concat([this.chunks,data]);
+    }
     while(true){
       if(this.chunks.length < this.headerLength){
         break;
@@ -32,9 +36,8 @@ class lengthFieldDecoder{
       if(this.chunks.length < totalLength){
         break;
       }
-      let buf = Buffer.from(this.chunks);
-      let completeData = buf.slice(this.headerLength,totalLength);
-      this.chunks.splice(0,totalLength);
+      let completeData = this.chunks.slice(this.headerLength,totalLength);
+      this.chunks = this.chunks.slice(totalLength);
       this.completeDataExecute(completeData);
     }
   }

@@ -92,7 +92,11 @@ let lengthFieldDecoderIns = new lengthFieldDecoder(4,100*1024*1024,function(comp
       let callback = function(response){
         let body = [];
         response.on('data', function(data) {
-          body.push(...data);
+          if(body.length === 0){
+            body = data;
+          }else{
+            body = Buffer.concat([this.body,data]);
+          }
         });
         response.on('end', function() {
           let responseData = {

@@ -1,6 +1,6 @@
 {
   "serverIp": "127.0.0.1",
-  "serverPort": 8080,
+  "serverPort": 7100,
   "token": "12345676788",
   "registers": [
     {
