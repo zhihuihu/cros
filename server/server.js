@@ -2,7 +2,7 @@ const net = require('net');
 const uuid = require('uuid');
 const http = require('http');
 const serverConfig = require('./server.json');
-const delimiterDecoder = require('../delimiter/delimiterDecoder');
+const common = require('../utils/common');
 const lengthFieldDecoder = require('../lengthField/lengthFieldDecoder');
 const lengthFieldEncoder = require('../lengthField/lengthFieldEncoder');
 
@@ -40,7 +40,7 @@ const server = net.createServer((socket) => {
         socket.end();
         return;
       }
-      console.log("新客户端连接 clientConnectChannelId="+clientConnectChannelId)
+      console.log(new Date().format("yyyy-MM-dd hh:mm:ss") + "  新客户端连接 clientConnectChannelId="+clientConnectChannelId)
       receiveData.data.forEach((register,index,arr) => {
         // 发送消息给客户端注册的状态
         let sendData = {
@@ -144,7 +144,7 @@ const server = net.createServer((socket) => {
   });
   // 监听客户端断开连接事件
   socket.on('error', (error) => {
-    console.log('客户端异常关闭 clientConnectChannelId='+clientConnectChannelId,error);
+    console.log(new Date().format("yyyy-MM-dd hh:mm:ss") + '  客户端异常关闭 clientConnectChannelId='+clientConnectChannelId,error);
     socket.end();
     // 删除客户端与服务端的连接
     clientConnectSocketMap.delete(clientConnectChannelId);

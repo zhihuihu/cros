@@ -1,9 +1,9 @@
 const net = require('net');
 const http = require('http');
 const clientConfig = require('./client.json');
-const delimiterDecoder = require('../delimiter/delimiterDecoder');
 const lengthFieldDecoder = require('../lengthField/lengthFieldDecoder');
 const lengthFieldEncoder = require('../lengthField/lengthFieldEncoder');
+const common = require('../utils/common');
 
 // 心跳助手
 let idleStateHandler;
@@ -31,7 +31,7 @@ let lengthFieldDecoderIns = new lengthFieldDecoder(4,100*1024*1024,function(comp
       },30000);
     }
     receiveData.data.forEach((result)=>{
-      console.log(result.msg);
+      console.log(new Date().format("yyyy-MM-dd hh:mm:ss") + " " + result.msg);
     })
   }else if(receiveData.type === 3){
     // 接收到请求数据
@@ -162,7 +162,7 @@ function connect(){
 
   })
   connectClient.on("error", (error)=>{
-    console.error("异常",error);
+    console.error(new Date().format("yyyy-MM-dd hh:mm:ss") + " 异常",error);
     // 断线重连
     connectClient.end();
     clearInterval(reconnectHandler);
