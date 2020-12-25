@@ -6,6 +6,11 @@
 
 ### server.config配置
 ```
+* 项目clone下来
+* 执行 npm install
+* 然后配置一下文件，分为服务端和客户端
+```
+```
 * 服务端启动 node ./server/server.js*
 {
   // 服务开启的tcp端口供服务端和客户端通信
@@ -55,5 +60,7 @@
     }
   ]
 }
-
+* registers中可以配置多个{}，穿透多个不同的服务 *
+* 采用tcp方式最后访问地址是  serverIp:port 如 106.12.3.22:8082 *
+* 采用http方式最后访问地址是   subdomain.subdomainHost 如  cos.huzhihui.com *
 ```
