@@ -95,7 +95,7 @@ let lengthFieldDecoderIns = new lengthFieldDecoder(4,100*1024*1024,function(comp
           if(body.length === 0){
             body = data;
           }else{
-            body = Buffer.concat([this.body,data]);
+            body = Buffer.concat([body,data]);
           }
         });
         response.on('end', function() {

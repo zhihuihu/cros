@@ -192,7 +192,7 @@ http.createServer(function (req, res) {
     if(post.length === 0){
       post = data;
     }else{
-      post = Buffer.concat([this.post,data]);
+      post = Buffer.concat([post,data]);
     }
   });
 
