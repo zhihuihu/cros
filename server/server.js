@@ -215,7 +215,7 @@ http.createServer(function (req, res) {
         headers: req.headers,
         url: req.url,
         method: req.method,
-        postData: post
+        postData: [...post]
       }
       let initData = {
         channelId: channelId,

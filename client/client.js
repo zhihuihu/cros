@@ -103,7 +103,7 @@ let lengthFieldDecoderIns = new lengthFieldDecoder(4,100*1024*1024,function(comp
             type: "http",
             statusCode: response.statusCode,
             headers: response.headers,
-            body: body
+            body: [...body]
           }
           // 数据接收完成
           let sendData = {
