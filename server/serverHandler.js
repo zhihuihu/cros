@@ -11,10 +11,8 @@ class serverHandler{
 
   constructor(configJson) {
     if(configJson){
-      console.log(new Date().format("yyyy-MM-dd hh:mm:ss") + "  使用用户自定义配置文件")
       serverConfig = configJson;
     }else{
-      console.log(new Date().format("yyyy-MM-dd hh:mm:ss") + "  使用默认配置文件")
     }
   }
 
