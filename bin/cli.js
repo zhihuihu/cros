@@ -7,9 +7,10 @@ const fs = require('fs');
 const path = require("path");
 const serverHandler = require('../server/serverHandler');
 const clientHandler = require('../client/clientHandler');
+const projectPackage = require('../package.json');
 
 // 工具版本号
-commander.version('1.0.0');
+commander.version(projectPackage.version);
 
 commander
   .command('server <configPath>')

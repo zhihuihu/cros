@@ -4,14 +4,44 @@
 * ### http内网穿透
 * ### 其他功能暂时不想开发
 
-### server.config配置
+### 项目说明
 ```
-* 项目clone下来
+* 项目分为服务端和客户端
+* 服务端 为部署在公网服务器的一端接收整个请求
+* 客户端 为部署在用户内网中，转发公网过来的请求，路由到指定服务
+* 项目可以采用如下两种方式部署
+* 一、采用脚手架部署客户端和服务端
+* npm install cros -g
+* 运行服务端 cros server serverConfig.json 
+* serverConfig.json 是服务端的配置文件路径，具体配置在下面
+* 运行客户端 cros client clientConfig.json
+* clientConfig.json 是服务端的配置文件路径，具体配置在下面
+* 二、采用源码方式部署客户端和服务端
+* 项目clone下来 git clone https://github.com/zhihuihu/cros.git
 * 执行 npm install
 * 然后配置一下文件，分为服务端和客户端
 ```
+### 服务端nginx配置（如果需要域名穿透）
+```shell script
+# node内网穿透
+server {
+  listen 80;
+  # 泛型域名
+  server_name *.crosn.aaa.com;
+  location / {
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header Host $http_host:80;
+    proxy_set_header X-Nginx-Proxy true;
+    proxy_set_header Connection "";
+    # 服务端配置的http的端口
+    proxy_pass http://127.0.0.1:7101/;
+  }
+}
 ```
-* 服务端启动 node ./server/server.js*
+### server.config配置
+```
+* 服务端启动 node ./server/server.js 或者脚手架启动 cros server serverConfig.json *
 {
   // 服务开启的tcp端口供服务端和客户端通信
   "bindPort": 8080,
@@ -27,7 +57,7 @@
 ### client.json配置
 
 ```
-* 客户端启动 node ./client/client.js *
+* 客户端启动 node ./client/client.js 或者脚手架启动 cros client clientConfig.json *
 {
   // 服务端的IP地址
   "serverIp": "127.0.0.1",
