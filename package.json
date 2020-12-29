@@ -3,13 +3,21 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+  "bin": {
+    "cros": "./bin/cli.js"
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "client": "node ./client/client.js",
+    "server": "node ./server/server.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "uuid": "^8.3.2"
+    "uuid": "^8.3.2",
+    "chalk": "^3.0.0",
+    "commander": "^4.1.1",
+    "inquirer": "^7.0.4",
+    "ora": "^4.0.3"
   }
 }
