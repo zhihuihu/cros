@@ -62,6 +62,19 @@ class serverHandler{
             if(register.type === "tcp"){
               const clientTcpServer = net.createServer((clientTcpSocket) => {
                 let clientTcpChannelId = uuid.v1();
+                // 发送连接事件消息--有些tcp会让服务端先发消息，所以创建连接就通知是必要的
+                let sendData = {
+                  channelId: clientTcpChannelId,
+                  type: 3,
+                  connect: true,
+                  data:{
+                    type: "tcp",
+                    localIp: register.localIp,
+                    localPort: register.localPort,
+                    trueData: Buffer.from([])
+                  }
+                }
+                socket.write(lengthFieldEncoderIns.encode(Buffer.from(JSON.stringify(sendData),"utf-8")));
                 // 监听客户端的数据
                 clientTcpSocket.on('data', (data) => {
                   let sendData = {

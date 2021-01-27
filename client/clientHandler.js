@@ -52,7 +52,9 @@ class clientHandler {
           }else{
             // 连接服务器
             const tcpClient = net.connect({host: receiveData.data.localIp,port: receiveData.data.localPort}, () => {
-              tcpClient.write(Buffer.from(receiveData.data.trueData))
+              if(!receiveData.connect){
+                tcpClient.write(Buffer.from(receiveData.data.trueData))
+              }
               tcpClientMap.set(receiveData.channelId,tcpClient);
             })
             // 接收服务端的数据
