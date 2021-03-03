@@ -164,12 +164,34 @@ class serverHandler{
       });
       // 监听客户端断开连接事件
       socket.on('end', (data) => {
-        console.log('客户端断开连接')
+        console.log(new Date().format("yyyy-MM-dd hh:mm:ss") + '  客户端断开连接 clientConnectChannelId='+clientConnectChannelId);
+        // 删除客户端与服务端的连接
+        clientConnectSocketMap.delete(clientConnectChannelId);
+        // 删除客户端注册的TCP穿透连接
+        clientConnectTcpMap.forEach((v,k,map)=>{
+          if(v === clientConnectChannelId){
+            clientTcpServerSocketMap.forEach((vc,kc,map) => {
+              if(vc === k){
+                kc.end();
+                clientTcpServerSocketMap.delete(kc);
+              }
+            })
+            k.close();
+            clientConnectTcpMap.delete(k);
+          }
+        });
+        // 删除客户端注册的HTTP穿透连接
+        clientConnectSubdomainMap.forEach((v,k,map)=>{
+          if(v === clientConnectChannelId){
+            // 删除HTTP穿透配置
+            clientSubdomainConfigMap.delete(k);
+            clientConnectSubdomainMap.delete(k);
+          }
+        })
       });
       // 监听客户端断开连接事件
       socket.on('error', (error) => {
         console.log(new Date().format("yyyy-MM-dd hh:mm:ss") + '  客户端异常关闭 clientConnectChannelId='+clientConnectChannelId,error);
-        socket.end();
         // 删除客户端与服务端的连接
         clientConnectSocketMap.delete(clientConnectChannelId);
         // 删除客户端注册的TCP穿透连接
