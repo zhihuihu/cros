@@ -1,23 +1,19 @@
 {
   "name": "cros",
-  "version": "1.0.1",
-  "description": "",
-  "main": "index.js",
+  "version": "1.1.0",
+  "description": "A secure cross-network tunneling tool",
+  "main": "bin/cli.js",
   "bin": {
     "cros": "./bin/cli.js"
   },
   "scripts": {
-    "client": "node ./client/client.js",
-    "server": "node ./server/server.js"
+    "server": "node bin/cli.js server server/server.yml",
+    "client": "node bin/cli.js client client/client.yml"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "huzhihui",
+  "license": "MIT",
   "dependencies": {
-    "uuid": "^8.3.2",
-    "chalk": "^3.0.0",
-    "commander": "^4.1.1",
-    "inquirer": "^7.0.4",
-    "ora": "^4.0.3"
+    "commander": "^11.1.0",
+    "js-yaml": "^4.1.0"
   }
 }

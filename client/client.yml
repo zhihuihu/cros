@@ -1,0 +1,12 @@
+server:
+  host: 127.0.0.1
+  port: 3000
+crypto:
+  password: "mySecurePassword123!" # 必须与客户端保持一致
+tunnels:
+  - remotePort: 8080  # 外网端口（必须唯一）
+    localHost: 192.168.8.134
+    localPort: 8080
+  - remotePort: 3002  # 另一个唯一端口
+    localHost: 192.168.8.134
+    localPort: 22
