@@ -1,4 +1,5 @@
 const net = require('net');
+const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
@@ -12,6 +13,7 @@ class TunnelClient {
     this.failTunnelTcpList = new Set(); // 存储失败的TCP连接ID
     this.failTunnelHttpList = new Set(); // 存储失败的HTTP连接ID
     this.connections = new Map(); // connectionId -> { socket, state, buffer }
+    this.httpConnections = new Map(); // connectionId -> { req, res, buffer }
     this.controlSocket = null;
     this.receiveBuffer = Buffer.alloc(0);
     this.heartbeatInterval = 10000; // 10秒心跳间隔
@@ -91,13 +93,25 @@ class TunnelClient {
   registerTunnels() {
     const sentPorts = new Set();
     this.config.tunnels.forEach(tunnel => {
-      if (sentPorts.has(tunnel.remotePort)) return;
-      sentPorts.add(tunnel.remotePort);
-
-      const buffer = Buffer.alloc(3);
-      buffer.writeUInt8(0x52, 0); // 'R' 注册命令
-      buffer.writeUInt16BE(tunnel.remotePort, 1);
-      this.sendPacket(buffer);
+      if (tunnel.type === 'http') {
+        if (sentPorts.has(tunnel.remoteDomain)) return;
+        sentPorts.add(tunnel.remoteDomain);
+        const domainBudder = Buffer.from(tunnel.remoteDomain, 'utf8');
+        const buffer = Buffer.alloc(2 + domainBudder.length); 
+        buffer.writeUInt8(0x52, 0); // 'R' 注册命令
+        buffer.writeUInt8(0x48, 1); // 'H' 注册命令 HTTP 子命令
+        domainBudder.copy(buffer, 2); // 复制域名到缓冲区
+        this.sendPacket(buffer);
+      }else if(tunnel.type === 'tcp') {
+        if (sentPorts.has(tunnel.remotePort)) return;
+        sentPorts.add(tunnel.remotePort);
+        const buffer = Buffer.alloc(3);
+        buffer.writeUInt8(0x52, 0); // 'R' 注册命令
+        buffer.writeUInt16BE(tunnel.remotePort, 1);
+        this.sendPacket(buffer);
+      }else {
+        log.error('Client', `Tunnel type error: ${tunnel.type}`);
+      }
     });
   }
 
@@ -122,8 +136,11 @@ class TunnelClient {
       case 0x43: // 'C' 连接请求
         this.handleConnect(payload);
         break;
-      case 0x44: // 'D' 数据命令
+      case 0x44: // 'D' tcp转发数据命令
         this.handleData(payload);
+        break;
+      case 0x45: // 'E' http转发数据命令
+        this.handleHttpData(payload);
         break;
       case 0x48: // 'H' 心跳包
         //log.info('Client', 'Received heartbeat from server');
@@ -131,6 +148,105 @@ class TunnelClient {
       case 0x4E: // 'N' 通知命令
         this.handleNotice(payload);
         break;
+    }
+  }
+
+  handleHttpData(payload) {
+    const connectionId = payload.readUInt32BE(0);
+    const subCmd = payload[4];
+    const data = payload.slice(5);
+    const entry = this.httpConnections.get(connectionId);
+
+    log.info('Client', `Received HTTP data from server, connectionId: ${connectionId}, subCmd: ${subCmd}, data: ${data.length} bytes`);
+
+    if (subCmd !== 0x43 && !entry) {
+      return;
+    }
+
+    switch (subCmd) {
+      case 0x43: // 'C' http header 连接请求
+        this.createHttpConnection(connectionId, data);
+        break;
+      case 0x44: // 'D' http data 数据
+        if (entry) {
+          entry.req.write(data);
+        }
+        break;
+      case 0x45: // 'E' http end 结束
+        if (entry) {
+          entry.req.end();
+        }
+        break;
+    }
+  }
+
+  // 新增HTTP连接创建方法
+  createHttpConnection(connectionId, payload) {
+    try {
+      // 解析HTTP头信息
+      const headerJson = JSON.parse(payload.toString("utf8"));
+      // 查找对应的HTTP隧道配置
+      const host = headerJson.host;
+      const tunnel = this.config.tunnels.find(t =>
+        t.type === 'http' && t.remoteDomain === host
+      );
+      if (!tunnel) throw new Error('Tunnel not found');
+
+      const options = {
+        hostname: tunnel.localHost, 
+        port: tunnel.localPort,                
+        path: headerJson.url,   
+        method: headerJson.method,          
+        headers: headerJson.headers
+      };
+
+      // 创建请求
+      const req = http.request(options, (res) => {
+        console.log(`STATUS: ${res.statusCode}`); // 获取状态码
+        
+        // 发送HTTP响应头
+        const headerJson = {
+          statusCode: res.statusCode,
+          statusMessage: res.statusMessage,
+          headers: res.headers
+        };
+        const packet = Buffer.concat([
+          Buffer.from([0x45]), // HTTP响应命令
+          this.buildConnectiongIdBuffer(connectionId),
+          Buffer.from([0x43]), // 'C' 表示header数据
+          Buffer.from(JSON.stringify(headerJson), 'utf8')
+        ]);
+        this.sendPacket(packet);
+
+        res.on('data', (chunk) => {
+          // 处理响应数据
+          const packet = Buffer.concat([
+            Buffer.from([0x45]), // HTTP响应命令
+            this.buildConnectiongIdBuffer(connectionId),
+            Buffer.from([0x44]), // 'D' 表示Data数据
+            chunk
+          ]);
+          this.sendPacket(packet);
+        });
+        
+        res.on('end', () => {
+          // 发送响应结束
+          const packet = Buffer.concat([
+            Buffer.from([0x45]), // HTTP响应命令
+            this.buildConnectiongIdBuffer(connectionId),
+            Buffer.from([0x45])  // 'E' 表示End
+          ]);
+          this.sendPacket(packet);
+          this.httpConnections.delete(connectionId);
+        });
+      });
+
+      this.httpConnections.set(connectionId, {
+        req: req
+      });
+    } catch (e) {
+      log.error('Client', `HTTP connection error: ${e.message}`);
+      this.sendHttpError(connectionId);
     }
   }
 
@@ -226,6 +342,12 @@ class TunnelClient {
     const encryptedData = this.encrypt(data);
     lengthHeader.writeUInt32BE(encryptedData.length, 0);
     this.controlSocket.write(Buffer.concat([lengthHeader, encryptedData]));
+  }
+
+  buildConnectiongIdBuffer(connectionId) {
+    const buffer = Buffer.alloc(4);
+    buffer.writeUInt32BE(connectionId);
+    return buffer;
   }
 }
 

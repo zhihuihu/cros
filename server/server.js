@@ -1,4 +1,5 @@
 const net = require('net');
+const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
@@ -9,8 +10,10 @@ class TunnelServer {
   constructor(configPath) {
     this.config = this.loadConfig(configPath);
     this.tunnels = new Map();        // remotePort -> clientSocket
+    this.httpTunnels = new Map();     // remoteDomain -> clientSocket
     this.tunnelServers = new Map();  // remotePort -> net.Server
     this.connections = new Map();   // connectionId -> { socket, state, buffer }
+    this.httpConnections = new Map(); // connectionId -> { socket, state, buffer }
     this.connectionIdCounter = 0;
 
     // 加密配置
@@ -47,10 +50,70 @@ class TunnelServer {
   }
 
   start() {
+    // TCP 控制服务器
     const server = net.createServer(socket => this.handleControlConnection(socket));
     server.listen(this.config.port, () => {
       log.info('Server', `Control server listening on ${this.config.port}`);
     });
+
+    // HTTP 控制服务器
+    const httpServer = http.createServer((req, res) => { this.handleHttpControlConnection(req, res); });
+    httpServer.listen(this.config.httpPort, () => {
+      log.info('Server', `Control HTTP server listening on ${this.config.httpPort}`);
+    });
+  }
+
+  handleHttpControlConnection(req, res) {
+    log.info('Server', `HTTP request received for domain ${JSON.stringify(req.headers)}`);
+    const host = req.headers['host'].split(':')[0];
+    const tunnelSocket = this.httpTunnels.get(host);
+
+    if (!tunnelSocket) {
+      res.statusCode = 404; // 状态码
+      res.setHeader('Content-Type', 'text/plain'); // 设置响应头
+      res.end('Domain not registered');
+      return;
+    }
+
+    const connectionId = this.generateConnectionId();
+    this.httpConnections.set(connectionId, { res, host });
+
+    // 协议格式：[命令(0x45)][connectionId(4字节)][子命令][JSON头数据]
+    const headerJson = {
+      method: req.method,
+      url: req.url,
+      headers: req.headers,
+      connectionId: connectionId,
+      host: host
+    };
+    const headerPacket = Buffer.concat([
+      Buffer.from([0x45]), // http 数据处理
+      this.buildConnectionIdBuffer(connectionId),
+      Buffer.from([0x43]), // C 表示JSON头数据
+      Buffer.from(JSON.stringify(headerJson), 'utf8')
+    ]);
+    this.sendPacket(tunnelSocket, headerPacket);
+
+    // 处理内容体
+    req.on('data', chunk => {
+      const dataPacket = Buffer.concat([
+        Buffer.from([0x45]), // http 数据处理
+        this.buildConnectionIdBuffer(connectionId),
+        Buffer.from([0x44]), // D 表示数据
+        chunk
+      ]);
+      this.sendPacket(tunnelSocket, dataPacket);
+    })
+
+    req.on('end', () => {
+      const endPacket = Buffer.concat([
+        Buffer.from([0x45]), // http 数据处理
+        this.buildConnectionIdBuffer(connectionId),
+        Buffer.from([0x45])  // E 表述数据传输完了
+      ]);
+      this.sendPacket(tunnelSocket, endPacket);
+    })
+
   }
 
   handleControlConnection(clientSocket) {
@@ -74,7 +137,7 @@ class TunnelServer {
     });
 
     clientSocket.on('close', () => {
-      log.info('Server', 'Control socket closed');
+      log.info('Server', `Tunnel client disconnected `);
       this.closeClientTunnalsAndServers(clientSocket);
     });
   }
@@ -85,10 +148,7 @@ class TunnelServer {
         this.tunnels.delete(remotePort);
         const server = this.tunnelServers.get(remotePort);
         if (server) {
-          server.close(() => {
-            log.info('Server', `Closed public server for port ${remotePort}`);
-            this.tunnelServers.delete(remotePort);
-          });
+          server.close();
           if(server._sockets) {
             server._sockets.forEach((socket) => {
               socket.destroy(); // 强制关闭连接 
@@ -96,6 +156,13 @@ class TunnelServer {
             server._sockets.clear();
           }
         }
+      }
+    }
+    // 关闭HTTP隧道
+    for (const [domain, socket] of this.httpTunnels.entries()) {
+      if (socket === clientSocket) {
+        log.info('Server', `Closed HTTP tunnel for domain ${domain}`);
+        this.httpTunnels.delete(domain);
       }
     }
   }
@@ -106,11 +173,18 @@ class TunnelServer {
 
     switch (cmd) {
       case 0x52: // 'R' 注册隧道
-        this.handleRegister(clientSocket, payload);
+        if (payload[0] === 0x48) { // H 表示HTTP注册
+          this.handleHttpRegister(clientSocket, payload.slice(1));
+        } else {
+          this.handleRegister(clientSocket, payload);
+        }
         break;
       case 0x41: // 'A' ACK确认
-      case 0x44: // 'D' 数据传输
+      case 0x44: // 'D' tcp数据传输
         this.handleConnectionData(cmd, payload);
+        break;
+      case 0x45: // 'D' http数据传输
+        this.handleHttpConnectionData(cmd, payload);
         break;
       case 0x48: // 'H' 心跳包
         // 收到心跳包后回复相同的心跳包
@@ -121,6 +195,30 @@ class TunnelServer {
     }
   }
 
+  handleHttpConnectionData(cmd, payload){
+    const connectionId = payload.readUInt32BE(0);
+    const subCmd = payload[4]; // 子命令
+    const data = payload.slice(5); // 数据
+    const conn = this.httpConnections.get(connectionId);
+    log.info('Server', `HTTP connection data received for connectionId: ${connectionId}, subCmd: ${subCmd} && ${conn}`);
+    if (!conn) return;
+    switch (subCmd) {
+      case 0x43: // 'C' 表示JSON头数据
+        const headersJson = JSON.parse(data.toString('utf8'));
+        conn.res.writeHead(headersJson.statusCode, headersJson.headers);
+        break;
+      case 0x44: // 'D' 表示数据
+        // 检查是否是第一次写入数据，如果是则需要解析头信息并设置响应头
+        conn.res.write(data);
+        break;
+      case 0x45: // 'E' 表示HTTP结束
+        conn.res.end();
+        this.httpConnections.delete(connectionId);
+        break;
+    }
+  }
+
+
   handleRegister(clientSocket, payload) {
     const remotePort = payload.readUInt16BE(0);
     if (this.tunnels.has(remotePort)) return;
@@ -128,6 +226,23 @@ class TunnelServer {
     this.tunnels.set(remotePort, clientSocket);
     log.info('Server', `Registered port ${remotePort}`);
     this.createPublicServer(remotePort, clientSocket);
+  }
+
+  /**
+   * http 域名注册
+   * @param {*} clientSocket 
+   * @param {*} payload 
+   */
+  handleHttpRegister(clientSocket, payload) {
+    const domain = payload.toString('utf8');
+    if (this.httpTunnels.has(domain)) {
+      this.sendNoticePacket(clientSocket, this.buildNoticeHttpJson(false, domain, '域名已被占用'));
+      return;
+    }
+
+    this.httpTunnels.set(domain, clientSocket);
+    this.sendNoticePacket(clientSocket, this.buildNoticeHttpJson(true, domain, '域名注册成功'));
+    log.info('Server', `Registered HTTP domain ${domain}`);
   }
 
   createPublicServer(remotePort, clientSocket) {
@@ -265,6 +380,28 @@ class TunnelServer {
       remotePort: remotePort,
       message: message
     };
+  }
+
+  /**
+   * 构建http的通知json
+   * @param {*} success 
+   * @param {*} remoteDomain 
+   * @param {*} message 
+   * @returns 
+   */
+  buildNoticeHttpJson(success, remoteDomain, message) {
+    return {
+      success: success,
+      type: 'http',
+      remoteDomain: remoteDomain,
+      message: message
+    };
+  }
+
+  buildConnectionIdBuffer(connectionId) {
+    const buffer = Buffer.alloc(4);
+    buffer.writeUInt32BE(connectionId, 0);
+    return buffer;
   }
 }
 

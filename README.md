@@ -1,5 +1,13 @@
-# 项目说明
-> `5`年前，初次接触`node.js`，写了一个粗糙的内网穿透`demo`，现在在`ai`的优化下重构了项目，先实现TCP的内网穿透，后续会显现`http`域名方式的内网穿透。
+## 项目说明
+> `5`年前，初次接触`node.js`，写了一个粗糙的内网穿透`demo`，现在在`ai`的优化下重构了项目，实现`tcp`协议的内网穿透，支持多端口映射，支持加密传输，支持`http`域名方式的内网穿透。
+## 功能说明
+- [v] 支持TCP协议的内网穿透
+- [v] 支持多端口映射
+- [v] 支持加密传输
+- [v] 支持`http`域名方式的内网穿透
+- [x] 支持`http的websocket`域名方式的内网穿透
+- [x] 支持`https`域名方式的内网穿透
+
 ## 使用说明
 > 不推荐使用源码方式安装，推荐使用`npm`安装。
 ### 工具安装
@@ -11,6 +19,7 @@ npm install -g cros
 #### 配置文件`server.yml`
 ```yaml
 port: 3000
+httpPort: 3001
 crypto:
   password: "mySecurePassword123!" # 必须与客户端保持一致
 ```
@@ -38,11 +47,17 @@ crypto:             # 加密配置
   password: "mySecurePassword123!" # 必须与服务端保持一致
 tunnels:
   - remotePort: 8080  # 外网端口（必须唯一）
-    localHost: 192.168.8.11  # 内网地址
-    localPort: 8080  # 内网端口
+    type: tcp
+    localHost: 192.168.8.134
+    localPort: 8080
   - remotePort: 3002  # 另一个唯一端口
-    localHost: 192.168.8.11
+    type: tcp
+    localHost: 192.168.8.134
     localPort: 22
+  - type: http
+    remoteDomain: home.huzhihui.com  # 唯一域名（必须唯一）
+    localHost: 192.168.8.134
+    localPort: 8080
 ```
 #### 启动客户端
 ```bash
