@@ -1,5 +1,6 @@
 const net = require('net');
 const http = require('http');
+const ws = require('ws');
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
@@ -58,13 +59,60 @@ class TunnelServer {
 
     // HTTP 控制服务器
     const httpServer = http.createServer((req, res) => { this.handleHttpControlConnection(req, res); });
+    // HTTP 控制服务器 websocket 共享端口服务器
+    const wsServer = new ws.Server({ server: httpServer });
+    wsServer.on('connection', (ws, request) => { this.handleHttpWsControlConnection(ws, request) });
+
     httpServer.listen(this.config.httpPort, () => {
       log.info('Server', `Control HTTP server listening on ${this.config.httpPort}`);
     });
   }
 
+  handleHttpWsControlConnection(ws, request) {
+    const host = request.headers['host'].split(':')[0];
+    const tunnelSocket = this.httpTunnels.get(host);
+    if (!tunnelSocket) {
+      ws.send(`Domain not registered`);
+      ws.close();
+      return;
+    }
+
+    const connectionId = this.generateConnectionId();
+    this.httpConnections.set(connectionId, { ws, host });
+    const headerJson = {
+      url: request.url,
+      headers: request.headers,
+      host: host
+    };
+    const headerPacket = Buffer.concat([
+      Buffer.from([0x46]), // http ws 数据处理
+      this.buildConnectionIdBuffer(connectionId),
+      Buffer.from([0x43]), // C 表示JSON头数据
+      Buffer.from(JSON.stringify(headerJson), 'utf8')
+    ]);
+    this.sendPacket(tunnelSocket, headerPacket);
+
+    ws.on('message', (message) => {
+      const dataPacket = Buffer.concat([
+        Buffer.from([0x46]), // http ws 数据处理
+        this.buildConnectionIdBuffer(connectionId),
+        Buffer.from([0x44]), // D 表示数据
+        Buffer.from(message.toString('utf8'), 'utf8')
+      ]);
+      this.sendPacket(tunnelSocket, dataPacket);
+    });
+
+    ws.on('close', () => {
+      const endPacket = Buffer.concat([
+        Buffer.from([0x46]), // http ws 数据处理
+        this.buildConnectionIdBuffer(connectionId),
+        Buffer.from([0x45])  // E 表述数据传输完了
+      ]);
+      this.sendPacket(tunnelSocket, endPacket);
+    });
+  }
+
   handleHttpControlConnection(req, res) {
-    log.info('Server', `HTTP request received for domain ${JSON.stringify(req.headers)}`);
     const host = req.headers['host'].split(':')[0];
     const tunnelSocket = this.httpTunnels.get(host);
 
@@ -186,6 +234,9 @@ class TunnelServer {
       case 0x45: // 'D' http数据传输
         this.handleHttpConnectionData(cmd, payload);
         break;
+      case 0x46: // 'E' http ws数据传输
+        this.handleHttpWsConnectionData(cmd, payload);
+        break;
       case 0x48: // 'H' 心跳包
         // 收到心跳包后回复相同的心跳包
         const response = Buffer.alloc(1);
@@ -195,12 +246,31 @@ class TunnelServer {
     }
   }
 
+  handleHttpWsConnectionData(cmd, payload){
+    const connectionId = payload.readUInt32BE(0);
+    const subCmd = payload[4]; // 子命令
+    const data = payload.slice(5); // 数据
+    const conn = this.httpConnections.get(connectionId);
+    if (!conn) return;
+    switch (subCmd) {
+      case 0x43: // 'C' 表示JSON头数据
+        break;
+      case 0x44: // 'D' 表示数据
+        // 检查是否是第一次写入数据，如果是则需要解析头信息并设置响应头
+        conn.ws.send(data.toString('utf8'));
+        break;
+      case 0x45: // 'E' 表示结束
+        conn.ws.close();
+        this.httpConnections.delete(connectionId);
+        break;
+    }
+  }
+
   handleHttpConnectionData(cmd, payload){
     const connectionId = payload.readUInt32BE(0);
     const subCmd = payload[4]; // 子命令
     const data = payload.slice(5); // 数据
     const conn = this.httpConnections.get(connectionId);
-    log.info('Server', `HTTP connection data received for connectionId: ${connectionId}, subCmd: ${subCmd} && ${conn}`);
     if (!conn) return;
     switch (subCmd) {
       case 0x43: // 'C' 表示JSON头数据

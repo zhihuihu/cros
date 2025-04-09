@@ -1,10 +1,12 @@
 const net = require('net');
 const http = require('http');
+const WebSocket = require('ws');
 const fs = require('fs');
 const path = require('path');
 const yaml = require('js-yaml');
 const crypto = require('crypto');
 const log = require('../common/logger.js');
+const { clear } = require('console');
 
 class TunnelClient {
   constructor(configPath) {
@@ -86,8 +88,25 @@ class TunnelClient {
     });
     this.controlSocket.on('close', () => {
       clearInterval(this.heartbeatTimer);
+      this.clearClient();
       log.error('Client', `Control socket close`);
     });
+  }
+
+  clearClient() {
+    this.failTunnelTcpList.clear();
+    this.failTunnelHttpList.clear();
+    this.connections.forEach(({ socket }) => socket.destroy()); 
+    this.connections.clear();
+    this.httpConnections.forEach(({ ws, req }) => {
+      if(req){
+        req.end();
+      }
+      if(ws){
+        ws.close();
+      }
+    });
+    this.httpConnections.clear();
   }
 
   registerTunnels() {
@@ -142,6 +161,9 @@ class TunnelClient {
       case 0x45: // 'E' http转发数据命令
         this.handleHttpData(payload);
         break;
+      case 0x46: // 'F' http ws转发数据命令
+        this.handleHttpWsData(payload);
+        break;
       case 0x48: // 'H' 心跳包
         //log.info('Client', 'Received heartbeat from server');
         break;
@@ -151,14 +173,40 @@ class TunnelClient {
     }
   }
 
-  handleHttpData(payload) {
+  handleHttpWsData(payload) {
     const connectionId = payload.readUInt32BE(0);
     const subCmd = payload[4];
     const data = payload.slice(5);
     const entry = this.httpConnections.get(connectionId);
 
-    log.info('Client', `Received HTTP data from server, connectionId: ${connectionId}, subCmd: ${subCmd}, data: ${data.length} bytes`);
+    if (subCmd !== 0x43 && !entry) {
+      return;
+    }
 
+    switch (subCmd) {
+      case 0x43: // 'C' header 连接请求
+        this.createHttpWsConnection(connectionId, data);
+        break;
+      case 0x44: // 'D' data 数据
+        if (entry.state === 'connected') {
+          entry.ws.send(data);
+        }else{
+          entry.buffer.push(data);
+        }
+        break;
+      case 0x45: // 'E' end 结束
+        if (entry) {
+          entry.ws.close();
+        }
+        break;
+    }
+  }
+
+  handleHttpData(payload) {
+    const connectionId = payload.readUInt32BE(0);
+    const subCmd = payload[4];
+    const data = payload.slice(5);
+    const entry = this.httpConnections.get(connectionId);
     if (subCmd !== 0x43 && !entry) {
       return;
     }
@@ -178,6 +226,61 @@ class TunnelClient {
         }
         break;
     }
+  }
+
+  createHttpWsConnection(connectionId, payload) {
+    // 解析HTTP头信息
+    const headerJson = JSON.parse(payload.toString("utf8"));
+    // 查找对应的HTTP隧道配置
+    const host = headerJson.host;
+    const tunnel = this.config.tunnels.find(t =>
+      t.type === 'http' && t.remoteDomain === host
+    );
+    if (!tunnel) {
+      return;
+    }
+
+    // 连接到 WebSocket 服务端
+    const ws = new WebSocket(`ws://${tunnel.localHost}:${tunnel.localPort}${headerJson.url}`);
+    this.httpConnections.set(connectionId, {
+      ws: ws,
+      state: 'connecting',
+      buffer: []
+    });
+
+    // 监听连接建立事件
+    ws.on('open', () => {
+      const entry = this.httpConnections.get(connectionId);
+      entry.state = 'connected';
+      entry.buffer.forEach(data => ws.send(data));
+      entry.buffer = [];
+    });
+
+    // 接收服务端消息
+    ws.on('message', (data) => {
+      const packet = Buffer.concat([
+        Buffer.from([0x46]), // HTTP响应命令
+        this.buildConnectiongIdBuffer(connectionId),
+        Buffer.from([0x44]), // 'D' 表示Data数据
+        Buffer.from(data.toString('utf8'), 'utf8')
+      ]);
+      this.sendPacket(packet);
+    });
+
+    ws.on('close', () => {
+      const packet = Buffer.concat([
+        Buffer.from([0x46]), // HTTP响应命令
+        this.buildConnectiongIdBuffer(connectionId),
+        Buffer.from([0x45])  // 'E' 表示End
+      ]);
+      this.sendPacket(packet);
+      this.httpConnections.delete(connectionId);
+    });
+
+    // 处理错误
+    ws.on('error', (err) => {
+      console.error('Error:', err);
+    });
   }
 
   // 新增HTTP连接创建方法
@@ -202,8 +305,6 @@ class TunnelClient {
 
       // 创建请求
       const req = http.request(options, (res) => {
-        console.log(`STATUS: ${res.statusCode}`); // 获取状态码
-        
         // 发送HTTP响应头
         const headerJson = {
           statusCode: res.statusCode,

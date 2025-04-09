@@ -1,12 +1,12 @@
 ## 项目说明
 > `5`年前，初次接触`node.js`，写了一个粗糙的内网穿透`demo`，现在在`ai`的优化下重构了项目，实现`tcp`协议的内网穿透，支持多端口映射，支持加密传输，支持`http`域名方式的内网穿透。
 ## 功能说明
-- [v] 支持TCP协议的内网穿透
-- [v] 支持多端口映射
-- [v] 支持加密传输
-- [v] 支持`http`域名方式的内网穿透
-- [x] 支持`http的websocket`域名方式的内网穿透
-- [x] 支持`https`域名方式的内网穿透
+- [✓] 支持TCP协议的内网穿透
+- [✓] 支持多端口映射
+- [✓] 支持加密传输
+- [✓] 支持`http`域名方式的内网穿透
+- [✓] 支持`http的websocket`域名方式的内网穿透
+- [ ] 支持`https`域名方式的内网穿透，但是你可以通过`nginx`反向代理的方式实现。
 
 ## 使用说明
 > 不推荐使用源码方式安装，推荐使用`npm`安装。
@@ -29,11 +29,13 @@ cros server server.yml
 ```
 #### 启动日志
 ```
-[2025-04-07 03:02:45] [Server] Control server listening on 3000
-[2025-04-07 03:02:55] [Server] Registered port 8080
-[2025-04-07 03:02:55] [Server] Public server listening on 8080
-[2025-04-07 03:02:55] [Server] Registered port 3002
-[2025-04-07 03:02:55] [Server] Public server listening on 3002
+[2025-04-09 05:19:43] [Server] Control server listening on 3000
+[2025-04-09 05:19:43] [Server] Control HTTP server listening on 3001
+[2025-04-09 05:20:11] [Server] Registered port 8080
+[2025-04-09 05:20:11] [Server] Public server listening on 8080
+[2025-04-09 05:20:11] [Server] Registered port 3002
+[2025-04-09 05:20:11] [Server] Registered HTTP domain home.huzhihui.com
+[2025-04-09 05:20:11] [Server] Public server listening on 3002
 ```
 
 ### 客户端使用指南
@@ -61,11 +63,12 @@ tunnels:
 ```
 #### 启动客户端
 ```bash
-cros server client.yml
+cros client client.yml
 ```
 #### 启动日志
 ```
-[2025-04-07 03:02:55] [Client] Connected to server
-[2025-04-07 03:02:55] [Client] Tunnel 8080 is available
-[2025-04-07 03:02:55] [Client] Tunnel 3002 is available
+[2025-04-09 05:20:11] [Client] Connected to server
+[2025-04-09 05:20:11] [Client] Tunnel 8080 is available
+[2025-04-09 05:20:11] [Client] Tunnel home.huzhihui.com is available
+[2025-04-09 05:20:11] [Client] Tunnel 3002 is available
 ```
