@@ -10,6 +10,7 @@
 
 ## 使用说明
 > 不推荐使用源码方式安装，推荐使用`npm`安装。
+- 项目源码地址：`https://github.com/zhihuihu/cros`
 ### 工具安装
 ```bash
 npm install -g cros
@@ -53,7 +54,7 @@ tunnels:
 cros client client.yml
 ```
 
-### `http`方式内网穿透
+### `http`域名方式内网穿透
 #### 服务端配置
 
 - 建议配合`nginx`一起使用
@@ -71,6 +72,8 @@ server {
 	}
 }
 ```
+> 上面的配置用了泛解析，所以可以通过`*.cros.huzhihui.com`访问到服务端。
+> 也可以通过`cros.huzhihui.com`访问到服务端。
 
 ##### 配置文件`server.yml`
 ```yaml
@@ -94,7 +97,7 @@ crypto:             # 加密配置
   password: "mySecurePassword123!" # 必须与服务端保持一致
 tunnels:
   - type: http
-    remoteDomain: home.huzhihui.com  # 唯一域名（必须唯一）
+    remoteDomain: home.cros.huzhihui.com  # 唯一域名（必须唯一）
     localHost: 192.168.8.134
     localPort: 8080
 ```
